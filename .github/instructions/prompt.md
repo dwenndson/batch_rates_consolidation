@@ -4,7 +4,7 @@
 ## Contexto
 
 Este projeto implementa a consolidação de tarifas de transações Pix com Java 21,
-Spring Boot, Spring Batch, Apache Kafka e PostgreSQL.
+Spring Boot 4.x, Spring Batch compatível, Apache Kafka e PostgreSQL.
 
 O Kafka deve ser utilizado exclusivamente no particionamento remoto do Spring
 Batch. Portanto, não implemente um consumidor de eventos Pix em tempo real como
@@ -155,9 +155,10 @@ payload Pix completo da partição, além de `minId` e `maxId`. Documentar limit
 de tamanho, aplicar validação de lote e configurar `max.poll.records`,
 `fetch.max.bytes` e limites equivalentes para evitar estouro de memória.
 
-O Manager deve iniciar cada execução por meio de um endpoint REST protegido,
-sem utilizar CRON. O endpoint deve validar os parâmetros da execução e delegar
-o controle ao Spring Batch.
+O Manager deve iniciar cada execução exclusivamente por meio de um endpoint REST
+protegido. O endpoint deve validar os parâmetros da execução e delegar o
+controle ao Spring Batch. Não implementar nem documentar disparos agendados ou
+qualquer mecanismo alternativo ao endpoint REST.
 
 ## Kafka e serialização
 

@@ -16,7 +16,7 @@ Foque **exclusivamente** na criação da arquitetura distribuída,
 microsserviços e arquitetura orientada a eventos.
 
 **Não crie, não referencie e não gere código para uma versão legada ou
-monolítica baseada em CRON.** Qualquer decisão técnica, documentação,
+monolítica baseada em agendamento.** Qualquer decisão técnica, documentação,
 configuração ou implementação deve respeitar essa restrição.
 
 ## 1. Arquitetura geral — Remote Partitioning
@@ -31,9 +31,10 @@ O Kafka é o barramento assíncrono de distribuição da carga. O foco é permit
 escalabilidade horizontal real dos Workers, sem concentrar o processamento de
 negócio no Manager.
 
-O Manager deve iniciar uma execução por meio de um endpoint REST protegido. A
-API deve validar a solicitação, criar os parâmetros do Job e delegar a
-orquestração ao Spring Batch. Não utilizar CRON como mecanismo de disparo.
+O Manager deve iniciar uma execução exclusivamente por meio de um endpoint REST
+protegido. A API deve validar a solicitação, criar os parâmetros do Job e
+delegar a orquestração ao Spring Batch. Não utilizar agendamento ou qualquer
+outro mecanismo alternativo ao endpoint REST como mecanismo de disparo.
 
 ## 2. Componente Manager — Nó Gerenciador
 
@@ -171,7 +172,7 @@ do Spring Batch, Kafka e do controle transacional.
 
 ## 8. Restrições de implementação
 
-- Não implementar fluxo legado ou monolítico baseado em CRON.
+- Não implementar fluxo legado ou monolítico baseado em agendamento.
 - Não colocar regras de negócio no Manager.
 - Não usar o Kafka apenas como fila genérica sem integração com o
   Remote Partitioning.
