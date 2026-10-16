@@ -4,14 +4,18 @@ Microsserviço distribuído para consolidação de tarifas de transações Pix,
 implementado com Java 21, Spring Boot 4.x, Spring Batch, Apache Kafka e
 PostgreSQL.
 
+As decisões arquiteturais canônicas estão em
+`.github/copilot-instructions.md`. Os arquivos em `.github/instructions/`
+detalham o contrato Pix e a observabilidade.
+
 O processamento utiliza **Remote Partitioning** do Spring Batch. O trabalho é
 orquestrado por um nó Manager e executado horizontalmente por múltiplos nós
 Worker. Cada execução é iniciada exclusivamente por um endpoint REST protegido.
 
-> **Status atual:** o endpoint REST de início de execução e sua camada de
-> segurança já estão implementados. A configuração do `JobRepository`, o
-> particionamento Kafka, as entidades Pix e o processamento dos Workers serão
-> implementados nas próximas etapas.
+> **Status atual:** o endpoint REST, o `JobRepository`, as migrations, as
+> entidades Pix, o Partitioner, o Job do Manager e o processamento inicial do
+> Worker estão implementados. A integração dos canais internos com Kafka e a
+> chamada real para a API de isenções permanecem como próximas etapas.
 
 ## Visão completa do projeto
 
@@ -24,9 +28,9 @@ artefato, mas poderá assumir dois perfis lógicos:
 - `worker`: consome partições Kafka e executa o processamento de negócio.
 
 O Manager e os Workers compartilharão o PostgreSQL e o `JobRepository`. O
-Kafka será utilizado exclusivamente para transportar as instruções e respostas
-do Remote Partitioning. A quantidade de Workers poderá crescer ou diminuir sem
-alterar o contrato do Manager.
+Kafka será utilizado exclusivamente para transportar metadados de instruções e
+respostas do Remote Partitioning. A quantidade de Workers poderá crescer ou
+diminuir sem alterar o contrato do Manager.
 
 O fluxo completo planejado será:
 
@@ -118,12 +122,12 @@ Para cada partição, o Manager publica uma mensagem no tópico
 - `partitionId`;
 - `minId`;
 - `maxId`;
-- payload Pix completo correspondente à partição.
+- nenhum payload Pix.
 
-O `partitionId` será a chave técnica da instrução Kafka. O tamanho do payload
-será validado antes da publicação, com limites compatíveis com
-`max.poll.records`, `fetch.max.bytes`, `max.request.size` e propriedades
-equivalentes.
+O `partitionId` será a chave técnica da instrução Kafka. O Worker usará
+`minId` e `maxId` para ler a fonte de verdade no PostgreSQL. Essa decisão evita
+duplicidade de dados, mensagens grandes e exposição desnecessária de dados
+pessoais.
 
 #### 5. Consumo pelos Workers
 
@@ -142,10 +146,8 @@ O `ItemReader` buscará somente as transações pertencentes ao intervalo
 `minId`/`maxId` recebido. A leitura será feita em chunks para limitar o uso de
 memória e permitir commits transacionais frequentes.
 
-Quando o payload completo estiver disponível na mensagem, o Worker poderá
-desserializar os registros recebidos e associá-los ao range da partição. A
-implementação deve garantir que nenhum Worker processe registros fora da
-partição que recebeu.
+O Worker não recebe o payload Pix pelo Kafka. A consulta ao PostgreSQL deve
+garantir que nenhum Worker processe registros fora da partição que recebeu.
 
 #### 7. Processamento da tarifa
 
@@ -195,9 +197,10 @@ incluídos no retorno nem nos logs.
 
 #### 10. Acompanhamento pelo Manager
 
-O listener do Manager consumirá `batch-replies` e correlacionará cada resposta
-com o `jobExecutionId`, `stepExecutionId` e `partitionId` registrados no
-`JobRepository`.
+O fluxo suportado de Remote Partitioning do Spring Batch consumirá
+`batch-replies` e correlacionará cada resposta com o `jobExecutionId`,
+`stepExecutionId` e `partitionId` registrados no `JobRepository`. Não alterar
+manualmente as tabelas internas do repositório.
 
 O Job será concluído com sucesso somente quando todas as partições esperadas
 forem concluídas. Se uma partição falhar, o Manager deverá manter o erro
@@ -417,10 +420,11 @@ qualquer mecanismo alternativo ao REST.
 
 ### Estado atual do endpoint
 
-O contrato REST e a integração com `JobLauncher` já estão preparados. Enquanto
-o Job `pixConsolidationJob` ainda não estiver configurado, a aplicação informa
-explicitamente que o Job não está disponível. A implementação do Job e do
-`JobRepository` será adicionada na etapa de configuração do Manager.
+O contrato REST, o `JobLauncher` e o Job `pixConsolidationJob` estão
+configurados no profile `manager`. O Job cria partições por intervalo de IDs e
+usa canais internos preparados para a integração Remote Partitioning. A
+publicação e o consumo desses canais pelo Kafka ainda serão conectados na etapa
+de mensageria.
 
 ## Contratos Kafka
 
@@ -437,7 +441,6 @@ Transporta as instruções de execução para os Workers. A mensagem deve conter
 - `partitionId`;
 - `minId`;
 - `maxId`;
-- payload Pix completo da partição.
 
 Exemplo conceitual:
 
@@ -447,15 +450,7 @@ Exemplo conceitual:
   "stepExecutionId": 67890,
   "partitionId": "pix-0001",
   "minId": 1,
-  "maxId": 10000,
-  "pix": [
-    {
-      "endToEndId": "E1234567820200909123456789012345",
-      "txid": "7978c0c97ea64255",
-      "valor": "100.00",
-      "horario": "2020-09-09T20:15:00.358Z"
-    }
-  ]
+  "maxId": 10000
 }
 ```
 
@@ -525,6 +520,8 @@ Nunca utilizar `double` ou `float` para valores monetários.
 ## Resiliência
 
 - Não confirmar mensagens Kafka antes da persistência bem-sucedida.
+- Assumir entrega de uma ou mais vezes (at-least-once); a idempotência deve ser
+  garantida no banco.
 - Configurar retry para falhas transitórias.
 - Encaminhar mensagens inválidas para DLT.
 - Permitir retomada de Workers interrompidos.
@@ -590,9 +587,19 @@ rate(pix_consolidadas_total[1m])
 
 ## Configuração local
 
-As configurações de PostgreSQL, Kafka, tópicos, serializers, grupos de
+As configurações comuns de PostgreSQL, Kafka, tópicos, serializers, grupos de
 consumidores, retry, DLT e Actuator serão centralizadas em
-`src/main/resources/application.yaml`.
+`src/main/resources/application.yaml`. Configurações específicas ficam nos
+profiles `manager` e `worker`, e os valores sensíveis vêm do ambiente.
+
+O artefato deve ser executado com um profile explícito:
+
+- `manager`: API REST, JobLauncher, Partitioner e acompanhamento da execução;
+- `worker`: consumo de partições e processamento do Step Worker.
+
+Nenhum Job deve iniciar automaticamente durante o bootstrap da aplicação. O
+schema do Spring Batch e o schema de negócio devem ser controlados por
+migrations, não por inicialização destrutiva em produção.
 
 A infraestrutura local deverá fornecer:
 
@@ -601,9 +608,30 @@ A infraestrutura local deverá fornecer:
 - Prometheus;
 - Grafana.
 
-O `docker-compose.yml` e o `prometheus.yml` serão adicionados na etapa de
-infraestrutura local. Nenhuma credencial deve ser versionada no repositório;
-utilize variáveis de ambiente ou um mecanismo externo de configuração.
+O `docker-compose.yml` e o `prometheus.yml` definem a infraestrutura local.
+Nenhuma credencial deve ser versionada no repositório; utilize variáveis de
+ambiente ou um mecanismo externo de configuração.
+
+### Docker Compose
+
+A infraestrutura local inclui PostgreSQL, Kafka em modo KRaft, Prometheus,
+Grafana, um Manager e um Worker.
+
+```bash
+cp .env.example .env
+docker compose up --build
+```
+
+Os serviços ficam disponíveis em:
+
+- Manager: `http://localhost:8080`;
+- Worker: `http://localhost:8081`;
+- Prometheus: `http://localhost:9090`;
+- Grafana: `http://localhost:3000`.
+
+As migrations do Flyway criam o schema do Spring Batch e as tabelas Pix quando
+o Manager ou o Worker inicia. O arquivo `.env` é local e não deve ser
+versionado.
 
 ## Execução
 
@@ -633,13 +661,19 @@ No Linux ou macOS:
 No Windows:
 
 ```powershell
-.\mvnw.cmd spring-boot:run
+.\mvnw.cmd spring-boot:run -Dspring-boot.run.profiles=manager
 ```
 
 No Linux ou macOS:
 
 ```bash
-./mvnw spring-boot:run
+./mvnw spring-boot:run -Dspring-boot.run.profiles=manager
+```
+
+Para iniciar um Worker:
+
+```bash
+./mvnw spring-boot:run -Dspring-boot.run.profiles=worker
 ```
 
 Antes da execução completa, configure o banco e o Kafka conforme as propriedades

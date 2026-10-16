@@ -1,5 +1,8 @@
 
-# Prompt de implementação: recebimento de informações Pix via Kafka
+# Prompt de implementação: processamento Pix em partições
+
+> As regras gerais e decisões de conflito estão em
+> `.github/copilot-instructions.md`.
 
 ## Contexto
 
@@ -8,9 +11,7 @@ Spring Boot 4.x, Spring Batch compatível, Apache Kafka e PostgreSQL.
 
 O Kafka deve ser utilizado exclusivamente no particionamento remoto do Spring
 Batch. Portanto, não implemente um consumidor de eventos Pix em tempo real como
-substituto do fluxo de `batch-requests` e `batch-replies`. A mensagem Pix
-descrita neste documento representa o registro de negócio que será processado
-por um worker, depois que o Manager dividir o trabalho em partições.
+substituto do fluxo de `batch-requests` e `batch-replies`.
 
 ## Fonte do contrato Pix
 
@@ -27,8 +28,8 @@ da implementação local.
 
 ## Objetivo
 
-Implementar o suporte para receber e processar uma mensagem Kafka contendo
-informações de um ou mais Pix recebidos. O modelo deve permitir:
+Implementar o suporte para converter e processar dados Pix associados a uma
+partição. O modelo deve permitir:
 
 1. desserializar o JSON de negócio com segurança;
 2. preservar os identificadores e valores necessários para a consolidação;
@@ -41,38 +42,22 @@ informações de um ou mais Pix recebidos. O modelo deve permitir:
 ## Separação entre envelope Kafka e payload Pix
 
 Não misture metadados de infraestrutura com o contrato do BACEN. O envelope
-abaixo é interno da aplicação e pode ser ajustado conforme a configuração do
-Remote Partitioning:
+abaixo é interno da aplicação e contém somente os dados necessários para o
+Worker localizar a partição no PostgreSQL:
 
 ```json
 {
   "jobExecutionId": 12345,
   "stepExecutionId": 67890,
   "partitionId": "pix-0001",
-  "partitionStartId": 1,
-  "partitionEndId": 1000,
-  "pix": [
-    {
-      "endToEndId": "E1234567820200909123456789012345",
-      "txid": "7978c0c97ea64255",
-      "valor": "100.00",
-      "horario": "2020-09-09T20:15:00.358Z",
-      "chave": "financeiro@example.com",
-      "pagador": {
-        "nome": "Nome do Pagador",
-        "cpf": "12345678901"
-      },
-      "infoPagador": "Pagamento referente ao pedido 123",
-      "devolucoes": []
-    }
-  ]
+  "minId": 1,
+  "maxId": 1000
 }
 ```
 
-O campo `pix` deve ser uma coleção mesmo quando a mensagem transportar apenas
-um registro. Se a integração receber diretamente o formato de webhook da API
-Pix, mantenha o mesmo formato de negócio e apenas adapte o envelope técnico no
-adapter Kafka.
+O payload Pix é lido pelo Worker no PostgreSQL usando `minId` e `maxId`. Se a
+integração receber diretamente o formato de webhook da API Pix, converta-o para
+`TransacaoPix` por meio de um adapter separado antes do processamento.
 
 ## Modelo de negócio esperado
 
@@ -142,7 +127,7 @@ Implementar o fluxo respeitando a arquitetura existente:
 2. o Manager cria partições por faixa de identificadores;
 3. o Manager publica instruções no tópico `batch-requests`;
 4. o Worker consome a instrução da partição;
-5. o Worker busca ou desserializa os registros Pix associados;
+5. o Worker busca os registros Pix no PostgreSQL usando `minId` e `maxId`;
 6. o `ItemProcessor` consulta a API externa de isenção;
 7. o `ItemProcessor` calcula a tarifa;
 8. o `ItemWriter` salva `ConsolidadoPix` de forma idempotente;
@@ -150,10 +135,8 @@ Implementar o fluxo respeitando a arquitetura existente:
 10. o `JobRepository` mantém o estado e permite retomada após falha.
 
 Não criar um tópico de ingestão em tempo real sem uma decisão arquitetural
-explícita. Nesta arquitetura, a mensagem de particionamento deve transportar o
-payload Pix completo da partição, além de `minId` e `maxId`. Documentar limites
-de tamanho, aplicar validação de lote e configurar `max.poll.records`,
-`fetch.max.bytes` e limites equivalentes para evitar estouro de memória.
+explícita. Nesta arquitetura, a mensagem de particionamento não transporta o
+payload Pix. Validar `minId`, `maxId` e `partitionId` antes do processamento.
 
 O Manager deve iniciar cada execução exclusivamente por meio de um endpoint REST
 protegido. O endpoint deve validar os parâmetros da execução e delegar o
@@ -167,8 +150,7 @@ qualquer mecanismo alternativo ao endpoint REST.
   autorizadas;
 - definir `group.id`, chave da mensagem e política de commit de forma
   compatível com o Remote Partitioning;
-- usar `endToEndId` como chave de negócio quando a mensagem representar um Pix
-  individual; para instruções de partição, usar `partitionId`;
+- usar `partitionId` como chave das instruções de partição;
 - garantir que retry não provoque perda de mensagem nem confirmação prematura;
 - incluir observabilidade com `partitionId`, `jobExecutionId`,
   `stepExecutionId` e `endToEndId`, sem registrar dados pessoais ou payload
@@ -186,7 +168,7 @@ externa no código-fonte.
 Criar testes unitários e de integração para:
 
 - desserialização de um Pix válido;
-- payload com múltiplos itens em `pix`;
+- conversão de payload Pix com múltiplos itens para `TransacaoPix`;
 - ausência de `txid` e de dados opcionais;
 - presença de CPF ou CNPJ no pagador;
 - devolução associada ao Pix;

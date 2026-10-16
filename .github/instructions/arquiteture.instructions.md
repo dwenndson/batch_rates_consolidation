@@ -1,5 +1,10 @@
 # Instruções de Arquitetura para o Copilot (Spring Batch + Kafka)
 
+> As regras gerais e decisões de conflito estão em
+> `.github/copilot-instructions.md`.
+> Profiles e configuração de infraestrutura estão em
+> `runtime.instructions.md`.
+
 ## 1. Contexto do Projeto
 Você atua como um assistente de IA especialista em arquitetura distribuída Java. Sua tarefa é guiar e gerar código para um sistema de processamento em lote baseado no padrão **Remote Partitioning** (Particionamento Remoto) utilizando Spring Boot 4.x, Spring Batch compatível e Apache Kafka. O domínio de negócio é a tarifação massiva de transações PIX.
 
@@ -10,7 +15,7 @@ ao endpoint REST.
 ## 2. Mapa Arquitetural (Fonte da Verdade)
 Utilize o diagrama Mermaid abaixo como o guia definitivo para entender o fluxo de dados, as responsabilidades de cada componente e a comunicação assíncrona do sistema. Todo o código gerado deve refletir exatamente este fluxo:
 
-` mermaid
+```mermaid
 graph TD
     %% Entidades Externas e Banco
     DB[(Banco de Dados Relacional\nTransacaoPix / ConsolidadoPix / JobRepository)]
@@ -39,10 +44,10 @@ graph TD
     %% Fluxo Manager
     Trigger --> Partitioner
     Partitioner -- "1. Lê metadados" --> DB
-    Partitioner -- "2. Publica instruções de fatias" --> TopicReq
+    Partitioner -- "2. Publica metadados das fatias" --> TopicReq
     
     %% Fluxo Workers
-    TopicReq -- "3. Consomem fatias de ID" --> Worker1
+    TopicReq -- "3. Consomem intervalos de ID" --> Worker1
     TopicReq --> Worker2
     TopicReq --> WorkerN
 
@@ -56,14 +61,15 @@ graph TD
 
     %% Fluxo de Retorno
     TopicRep -- "8. Confirma conclusão" --> ReplyListener
-    ReplyListener -- "9. Atualiza JobRepository" --> DB
+    ReplyListener -- "9. Integra com o JobRepository" --> DB
 
     classDef database fill:#f9f,stroke:#333,stroke-width:2px;
     classDef kafka fill:#ff9,stroke:#333,stroke-width:2px;
     classDef worker fill:#bbf,stroke:#333,stroke-width:2px;
     class DB,API database;
     class TopicReq,TopicRep,Apache_Kafka kafka;
-    class Worker1,Worker2,WorkerN worker; `
+    class Worker1,Worker2,WorkerN worker;
+```
 
 ## 3. Diretivas de Implementação para o Código
 Baseado no fluxograma acima, obedeça às seguintes regras ao gerar as classes:
@@ -72,12 +78,16 @@ Regras do Manager Node
 Partitioner: Crie uma implementação de Partitioner que consulte a tabela TransacaoPix para pegar os IDs mínimo e máximo e dividi-los em intervalos (fatias).
 Sem lógica de negócio: O Manager NÃO calcula tarifas nem lê/salva as entidades brutas. Ele apenas orquestra o Job e despacha as partições para o tópico batch-requests.
 
-Reply Listener: Deve existir um mecanismo configurado (via Spring Integration ou o listener nativo do Spring Batch Kafka) para escutar o tópico batch-replies e atualizar o banco de dados (JobRepository).
+Reply Listener: Usar as abstrações suportadas de Remote Partitioning do Spring
+Batch para correlacionar as respostas e atualizar o estado da execução. Não
+alterar manualmente tabelas ou metadados internos do `JobRepository`.
 
 Regras dos Worker Nodes
 Consumo Kafka: O Worker atua como o Step escravo, consumindo mensagens do tópico batch-requests.
 
-ItemReader: Configurado para buscar dados da entidade TransacaoPix usando como filtro os IDs de inicio e fim (minId e maxId) recebidos através dos metadados da partição oriunda do Kafka.
+ItemReader: Configurado para buscar dados da entidade `TransacaoPix` usando
+como filtro os IDs de início e fim (`minId` e `maxId`) recebidos pelos
+metadados da partição oriunda do Kafka. O Kafka não transporta o payload Pix.
 
 ItemProcessor: É aqui que ocorre a lógica. O código gerado deve simular uma chamada a um serviço REST (API Externa de Isenções) via FeignClient ou RestTemplate.
 

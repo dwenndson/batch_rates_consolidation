@@ -1,17 +1,20 @@
 # Instruções de Implementação: Observabilidade e Métricas (Prometheus + Grafana)
 
+> As regras gerais e decisões de conflito estão em
+> `.github/copilot-instructions.md`.
+
 ## 1. Contexto
 Além da arquitetura distribuída (Manager/Workers) baseada em Spring Batch e Kafka, o projeto exige uma stack de observabilidade para provar a eficiência da solução. Precisamos gerar métricas de desempenho para alimentar um dashboard no Grafana, permitindo a extração de gráficos (throughput, memória, CPU) para o TCC.
 
 ## 2. Dependências (Maven/Gradle)
-O LLM deve adicionar as seguintes bibliotecas no `pom.xml` ou `build.gradle` dos microsserviços (Manager e Workers):
+Adicionar somente as dependências que ainda não existirem no projeto:
 - `spring-boot-starter-actuator`: Para expor as métricas internas da aplicação.
 - `micrometer-registry-prometheus`: Para formatar as métricas no padrão que o banco de dados Prometheus consegue raspar (scrape).
 - `micrometer-core`: Para criação de métricas customizadas de negócio.
 
 ## 3. Configuração da Aplicação (`application.yml`)
 O LLM deve configurar a exposição dos endpoints do Actuator para permitir a coleta do Prometheus. Exemplo obrigatório de configuração:
-`yaml
+```yaml
 management:
   endpoints:
     web:
@@ -22,18 +25,24 @@ management:
       enabled: true
   metrics:
     tags:
-      application: ${spring.application.name} # Para diferenciar o Manager do Worker no Grafana`
+      application: ${spring.application.name}
+```
 
 ## 4. Instrumentação de Código (Métricas Customizadas no Worker)
 O código gerado para o Worker Nodes (especificamente no ItemProcessor ou ItemWriter) deve injetar o MeterRegistry do Micrometer para criar métricas de negócio.
-O LLM deve implementar:
+Implementar:
 
 - Counter (pix.consolidadas.total): Para contar quantas transações PIX foram processadas com sucesso.
 
-- Timer (pix.processamento.tempo): Para medir o tempo exato que o ItemProcessor leva para processar um chunk e consultar a API externa de isenção.
+- Timer (`pix.processamento.tempo`): Para medir o tempo de processamento e da
+  consulta à API externa de isenção.
+
+Usar somente tags de baixa cardinalidade, como `profile`, `status` e `outcome`.
+Não usar `endToEndId`, `partitionId` ou dados pessoais como tags.
 
 ## 5. Infraestrutura Local (Docker Compose)
-O LLM deve gerar ou atualizar o arquivo docker-compose.yml na raiz do projeto contendo os seguintes serviços:
+Para desenvolvimento local, gerar ou atualizar um arquivo `docker-compose.yml`
+na raiz do projeto contendo os seguintes serviços:
 
 ` Prometheus:
     Imagem: prom/prometheus:latest
