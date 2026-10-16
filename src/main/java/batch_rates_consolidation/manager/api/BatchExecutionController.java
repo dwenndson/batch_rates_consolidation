@@ -3,6 +3,7 @@ package batch_rates_consolidation.manager.api;
 import batch_rates_consolidation.manager.application.BatchExecutionService;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
+import org.springframework.context.annotation.Profile;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -11,6 +12,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.net.URI;
 
 @RestController
+@Profile("manager")
 @RequestMapping("/api/v1/batches/pix-consolidation")
 public class BatchExecutionController {
 
