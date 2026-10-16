@@ -1,3 +1,54 @@
 spring:
   application:
-    name: Diego-Wenndson
+    name: ${SPRING_APPLICATION_NAME:batch-rates-consolidation}
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/batch_rates}
+    username: ${DB_USERNAME:batch_rates}
+    password: ${DB_PASSWORD:}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+  batch:
+    job:
+      enabled: false
+    jdbc:
+      initialize-schema: never
+      table-prefix: BATCH_
+      isolation-level-for-create: SERIALIZABLE
+  flyway:
+    enabled: ${FLYWAY_ENABLED:true}
+    locations: classpath:db/migration
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      group-id: ${KAFKA_CONSUMER_GROUP:batch-rates-workers}
+      enable-auto-commit: false
+      properties:
+        spring.json.trusted.packages: batch_rates_consolidation
+    producer:
+      properties:
+        enable.idempotence: true
+
+batch:
+  chunk-size: ${BATCH_CHUNK_SIZE:100}
+  fee:
+    default: ${BATCH_DEFAULT_FEE:1.00}
+  partition:
+    grid-size: ${BATCH_GRID_SIZE:1}
+  kafka:
+    requests-topic: ${BATCH_REQUESTS_TOPIC:batch-requests}
+    replies-topic: ${BATCH_REPLIES_TOPIC:batch-replies}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      probes:
+        enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}

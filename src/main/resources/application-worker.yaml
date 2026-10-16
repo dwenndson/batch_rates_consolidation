@@ -1,0 +1,7 @@
+spring:
+  config:
+    activate:
+      on-profile: worker
+
+server:
+  port: ${WORKER_SERVER_PORT:8081}

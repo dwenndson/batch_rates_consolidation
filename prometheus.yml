@@ -1,0 +1,15 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: batch-rates-manager
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets:
+          - manager:8080
+
+  - job_name: batch-rates-worker
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets:
+          - worker:8081
