@@ -9,12 +9,15 @@ import org.springframework.batch.core.launch.JobLauncher;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.ApplicationContext;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.TestPropertySource;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest
-@ActiveProfiles({"test", "manager"})
+@ActiveProfiles({"manager", "test"})
+@TestPropertySource(properties = "batch.kafka.enabled=false")
 class ManagerJobConfigurationTest {
 
 	@Autowired
@@ -24,9 +27,14 @@ class ManagerJobConfigurationTest {
 	@Autowired
 	private JobLauncher jobLauncher;
 
+	@Autowired
+	private ApplicationContext applicationContext;
+
 	@Test
 	void exposesPixConsolidationJob() {
 		assertThat(pixConsolidationJob.getName()).isEqualTo("pixConsolidationJob");
+		assertThat(applicationContext.containsBean("managerRequestsOutboundFlow")).isFalse();
+		assertThat(applicationContext.containsBean("managerRepliesInboundFlow")).isFalse();
 	}
 
 	@Test

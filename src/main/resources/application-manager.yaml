@@ -5,3 +5,7 @@ spring:
 
 server:
   port: ${MANAGER_SERVER_PORT:8080}
+
+batch:
+  kafka:
+    enabled: ${BATCH_KAFKA_ENABLED:true}

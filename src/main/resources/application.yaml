@@ -24,9 +24,14 @@ spring:
     consumer:
       group-id: ${KAFKA_CONSUMER_GROUP:batch-rates-workers}
       enable-auto-commit: false
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
       properties:
-        spring.json.trusted.packages: batch_rates_consolidation
+        spring.deserializer.value.delegate.class: org.springframework.kafka.support.serializer.JsonDeserializer
+        spring.json.trusted.packages: org.springframework.batch
     producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
       properties:
         enable.idempotence: true
 
@@ -37,8 +42,17 @@ batch:
   partition:
     grid-size: ${BATCH_GRID_SIZE:1}
   kafka:
+    enabled: ${BATCH_KAFKA_ENABLED:false}
     requests-topic: ${BATCH_REQUESTS_TOPIC:batch-requests}
     replies-topic: ${BATCH_REPLIES_TOPIC:batch-replies}
+    dlt:
+      backoff-interval: ${BATCH_KAFKA_DLT_BACKOFF_INTERVAL:1000}
+      retry-limit: ${BATCH_KAFKA_DLT_RETRY_LIMIT:2}
+  exemption:
+    base-url: ${EXEMPTION_API_BASE_URL:http://localhost:8090}
+    path: ${EXEMPTION_API_PATH:/exemptions/{endToEndId}}
+    connect-timeout: ${EXEMPTION_CONNECT_TIMEOUT:200ms}
+    read-timeout: ${EXEMPTION_READ_TIMEOUT:1s}
 
 management:
   endpoints:
@@ -49,6 +63,8 @@ management:
     health:
       probes:
         enabled: true
+    prometheus:
+      enabled: true
   metrics:
     tags:
       application: ${spring.application.name}

@@ -54,6 +54,12 @@ services:
       --replication-factor 1 &&
       /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092
       --create --if-not-exists --topic batch-replies --partitions 3
+      --replication-factor 1 &&
+      /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092
+      --create --if-not-exists --topic batch-requests.DLT --partitions 3
+      --replication-factor 1 &&
+      /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092
+      --create --if-not-exists --topic batch-replies.DLT --partitions 3
       --replication-factor 1"
 
   manager:
@@ -72,6 +78,7 @@ services:
       DB_USERNAME: ${POSTGRES_USER:-batch_rates}
       DB_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
       KAFKA_BOOTSTRAP_SERVERS: kafka:19092
+      BATCH_KAFKA_ENABLED: "true"
       SPRING_SECURITY_USER_NAME: ${MANAGER_USER:?MANAGER_USER must be set}
       SPRING_SECURITY_USER_PASSWORD: ${MANAGER_PASSWORD:?MANAGER_PASSWORD must be set}
     ports:
@@ -93,6 +100,8 @@ services:
       DB_USERNAME: ${POSTGRES_USER:-batch_rates}
       DB_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
       KAFKA_BOOTSTRAP_SERVERS: kafka:19092
+      BATCH_KAFKA_ENABLED: "true"
+      EXEMPTION_API_BASE_URL: ${EXEMPTION_API_BASE_URL:-http://localhost:8090}
       SPRING_SECURITY_USER_NAME: ${WORKER_USER:?WORKER_USER must be set}
       SPRING_SECURITY_USER_PASSWORD: ${WORKER_PASSWORD:?WORKER_PASSWORD must be set}
     ports:
