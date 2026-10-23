@@ -49,6 +49,12 @@ As propriedades devem ser configuráveis por ambiente:
 - política de confirmação;
 - retry e Dead Letter Topic (DLT);
 - limites de lote e tamanho de mensagem.
+- `batch.kafka.enabled`: liga os canais do Remote Partitioning aos tópicos.
+  O profile `test` mantém o valor `false`. Os profiles `manager` e `worker`
+  usam `true`, salvo override por `BATCH_KAFKA_ENABLED`.
+- Mensagens inválidas após o retry limitado seguem para `{tópico}.DLT`.
+- A API de isenção usa `EXEMPTION_API_BASE_URL`, timeout de conexão e timeout
+  de leitura. O Worker envia só `endToEndId`.
 
 Usar tipos confiáveis e explicitamente autorizados no desserializador JSON.
 Mensagens de partição usam `partitionId` como chave. Não aumentar os limites de

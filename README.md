@@ -13,9 +13,10 @@ orquestrado por um nó Manager e executado horizontalmente por múltiplos nós
 Worker. Cada execução é iniciada exclusivamente por um endpoint REST protegido.
 
 > **Status atual:** o endpoint REST, o `JobRepository`, as migrations, as
-> entidades Pix, o Partitioner, o Job do Manager e o processamento inicial do
-> Worker estão implementados. A integração dos canais internos com Kafka e a
-> chamada real para a API de isenções permanecem como próximas etapas.
+> entidades Pix, o Partitioner, o Job do Manager, o Step do Worker, a ligação
+> Kafka, a consulta HTTP de isenção, as métricas do Worker e o DLT estão
+> implementados. A execução ponta a ponta com PostgreSQL e Kafka reais
+> permanece como próxima etapa.
 
 ## Visão completa do projeto
 
@@ -155,7 +156,7 @@ O `ItemProcessor` será o único componente responsável pela regra de negócio.
 Para cada transação, ele deverá:
 
 1. validar os campos necessários;
-2. consultar a API externa simulada de isenções;
+2. consultar a API HTTP de isenções com `endToEndId`;
 3. aplicar a política de tarifa;
 4. calcular o valor usando `BigDecimal`;
 5. produzir o resultado que será persistido.
@@ -421,10 +422,11 @@ qualquer mecanismo alternativo ao REST.
 ### Estado atual do endpoint
 
 O contrato REST, o `JobLauncher` e o Job `pixConsolidationJob` estão
-configurados no profile `manager`. O Job cria partições por intervalo de IDs e
-usa canais internos preparados para a integração Remote Partitioning. A
-publicação e o consumo desses canais pelo Kafka ainda serão conectados na etapa
-de mensageria.
+configurados no profile `manager`. O Job cria partições por intervalo de IDs.
+Com `batch.kafka.enabled=true`, o Manager publica em `batch-requests` e
+consome `batch-replies`. O Worker consome `batch-requests` e publica em
+`batch-replies`. Nos testes, o Kafka permanece desligado para o contexto
+subir sem broker.
 
 ## Contratos Kafka
 
