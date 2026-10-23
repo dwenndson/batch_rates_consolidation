@@ -4,9 +4,10 @@ import batch_rates_consolidation.domain.ConsolidadoPix;
 import batch_rates_consolidation.domain.ConsolidadoPixRepository;
 import batch_rates_consolidation.domain.TransacaoPix;
 import batch_rates_consolidation.domain.TransacaoPixRepository;
-import batch_rates_consolidation.worker.service.FeeExemptionService;
 import batch_rates_consolidation.worker.service.FeeExemptionException;
-import batch_rates_consolidation.worker.service.SimulatedFeeExemptionService;
+import batch_rates_consolidation.worker.service.FeeExemptionService;
+import batch_rates_consolidation.worker.service.HttpFeeExemptionService;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.batch.core.repository.JobRepository;
 import org.springframework.batch.core.step.Step;
 import org.springframework.batch.infrastructure.item.ItemProcessor;
@@ -24,11 +25,14 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
 import org.springframework.data.domain.Sort;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.integration.channel.DirectChannel;
 import org.springframework.messaging.MessageChannel;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.web.client.RestClient;
 
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.util.Map;
 
 @Configuration
@@ -52,8 +56,25 @@ public class WorkerJobConfiguration {
 	}
 
 	@Bean
-	FeeExemptionService feeExemptionService() {
-		return new SimulatedFeeExemptionService();
+	@Qualifier("exemptionRestClient")
+	RestClient exemptionRestClient(
+			@Value("${batch.exemption.base-url}") String baseUrl,
+			@Value("${batch.exemption.connect-timeout}") Duration connectTimeout,
+			@Value("${batch.exemption.read-timeout}") Duration readTimeout) {
+		SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
+		requestFactory.setConnectTimeout(connectTimeout);
+		requestFactory.setReadTimeout(readTimeout);
+		return RestClient.builder()
+				.baseUrl(baseUrl)
+				.requestFactory(requestFactory)
+				.build();
+	}
+
+	@Bean
+	FeeExemptionService feeExemptionService(
+			@Qualifier("exemptionRestClient") RestClient exemptionRestClient,
+			@Value("${batch.exemption.path}") String path) {
+		return new HttpFeeExemptionService(exemptionRestClient, path);
 	}
 
 	@Bean
@@ -78,17 +99,20 @@ public class WorkerJobConfiguration {
 	ItemProcessor<TransacaoPix, ConsolidadoPix> feeCalculationProcessor(
 			ConsolidadoPixRepository consolidadoPixRepository,
 			FeeExemptionService feeExemptionService,
+			MeterRegistry meterRegistry,
 			@Value("${batch.fee.default:1.00}") BigDecimal defaultFee) {
 		return new FeeCalculationProcessor(
 				consolidadoPixRepository,
 				feeExemptionService,
-				defaultFee);
+				defaultFee,
+				meterRegistry);
 	}
 
 	@Bean
 	ItemWriter<ConsolidadoPix> consolidadoPixWriter(
-			ConsolidadoPixRepository consolidadoPixRepository) {
-		return new IdempotentConsolidadoPixWriter(consolidadoPixRepository);
+			ConsolidadoPixRepository consolidadoPixRepository,
+			MeterRegistry meterRegistry) {
+		return new IdempotentConsolidadoPixWriter(consolidadoPixRepository, meterRegistry);
 	}
 
 	@Bean

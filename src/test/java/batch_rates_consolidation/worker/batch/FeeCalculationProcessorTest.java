@@ -11,6 +11,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.Optional;
@@ -34,11 +36,7 @@ class FeeCalculationProcessorTest {
 		when(consolidadoPixRepository.findByEndToEndId("E-success")).thenReturn(Optional.empty());
 		when(feeExemptionService.isExempt(transaction)).thenReturn(false);
 
-		ConsolidadoPix result = new FeeCalculationProcessor(
-				consolidadoPixRepository,
-				feeExemptionService,
-				new BigDecimal("1.00"))
-				.process(transaction);
+		ConsolidadoPix result = processor().process(transaction);
 
 		assertThat(result.getEndToEndId()).isEqualTo("E-success");
 		assertThat(result.getTarifa()).isEqualByComparingTo("1.00");
@@ -53,12 +51,16 @@ class FeeCalculationProcessorTest {
 		when(consolidadoPixRepository.findByEndToEndId("E-failure")).thenReturn(Optional.empty());
 		when(feeExemptionService.isExempt(transaction)).thenThrow(failure);
 
-		assertThatThrownBy(() -> new FeeCalculationProcessor(
+		assertThatThrownBy(() -> processor().process(transaction))
+				.isSameAs(failure);
+	}
+
+	private FeeCalculationProcessor processor() {
+		return new FeeCalculationProcessor(
 				consolidadoPixRepository,
 				feeExemptionService,
-				new BigDecimal("1.00"))
-				.process(transaction))
-				.isSameAs(failure);
+				new BigDecimal("1.00"),
+				new SimpleMeterRegistry());
 	}
 
 	private TransacaoPix transaction(String endToEndId) {
