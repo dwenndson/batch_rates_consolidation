@@ -631,9 +631,9 @@ Os serviços ficam disponíveis em:
 - Prometheus: `http://localhost:9090`;
 - Grafana: `http://localhost:3000`.
 
-As migrations do Flyway criam o schema do Spring Batch e as tabelas Pix quando
-o Manager ou o Worker inicia. O arquivo `.env` é local e não deve ser
-versionado.
+As migrations do Flyway criam o schema do Spring Batch (`V1`), as tabelas Pix
+(`V2`) e os registros iniciais de teste (`V3`) quando o Manager ou o Worker
+inicia. O arquivo `.env` é local e não deve ser versionado.
 
 ## Execução
 

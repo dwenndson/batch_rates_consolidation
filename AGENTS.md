@@ -48,7 +48,15 @@ Do not log or return the complete request payload. The Worker sends only the
 
 ### Start and readiness
 
-Run the stack in the background:
+If a previous PostgreSQL volume exists from an earlier run, remove old
+containers and volumes first so Flyway initializes the database cleanly:
+
+```bash
+docker compose down -v
+```
+
+Run the stack in the background (rebuilding images to include
+`spring-boot-starter-flyway` and `V3__seed_initial_pix_transactions.sql`):
 
 ```bash
 docker compose --env-file .env up --build -d
@@ -63,12 +71,32 @@ curl --fail http://localhost:8081/actuator/health
 docker compose exec -T postgres pg_isready -U "$POSTGRES_USER" -d batch_rates
 ```
 
-Do not continue while PostgreSQL, Kafka, Manager, Worker, or the exemption
-stub is unavailable.
+Confirm that Flyway applied migrations `V1`, `V2`, and `V3` and that
+`transacao_pix` already contains the seeded `PENDING` transactions
+(`E2E-SEED-0001`, `E2E-SEED-0002`, `E2E-SEED-0003`):
+
+```bash
+docker compose exec -T postgres psql \
+  -U "$POSTGRES_USER" \
+  -d batch_rates <<'SQL'
+SELECT version, script, success
+FROM flyway_schema_history
+ORDER BY installed_rank;
+
+SELECT end_to_end_id, txid, valor, status
+FROM transacao_pix
+ORDER BY id;
+SQL
+```
+
+Do not continue while PostgreSQL, Kafka, Manager, Worker, the Flyway migrations,
+or the exemption stub is unavailable.
 
 ### Success scenario
 
-Insert one synthetic pending transaction:
+Migration `V3__seed_initial_pix_transactions.sql` already seeds three synthetic
+pending transactions (`E2E-SEED-0001`, `E2E-SEED-0002`, `E2E-SEED-0003`). You
+may also insert an additional synthetic pending transaction:
 
 ```bash
 docker compose exec -T postgres psql \
@@ -88,7 +116,8 @@ INSERT INTO transacao_pix (
     '{}'::jsonb,
     '[]'::jsonb,
     'PENDING'
-);
+)
+ON CONFLICT (end_to_end_id) DO NOTHING;
 SQL
 ```
 
@@ -106,12 +135,24 @@ Use the returned `jobExecutionId` to wait for `COMPLETED` in
 `BATCH_JOB_EXECUTION`. Then assert all of the following:
 
 ```sql
-SELECT status FROM transacao_pix
-WHERE end_to_end_id = 'E2E-SUCCESS-0001';
+SELECT end_to_end_id, status FROM transacao_pix
+WHERE end_to_end_id IN (
+    'E2E-SEED-0001',
+    'E2E-SEED-0002',
+    'E2E-SEED-0003',
+    'E2E-SUCCESS-0001'
+)
+ORDER BY end_to_end_id;
 
 SELECT end_to_end_id, tarifa, status
 FROM consolidado_pix
-WHERE end_to_end_id = 'E2E-SUCCESS-0001';
+WHERE end_to_end_id IN (
+    'E2E-SEED-0001',
+    'E2E-SEED-0002',
+    'E2E-SEED-0003',
+    'E2E-SUCCESS-0001'
+)
+ORDER BY end_to_end_id;
 
 SELECT status, exit_code
 FROM BATCH_JOB_EXECUTION
@@ -120,10 +161,12 @@ WHERE job_execution_id = :jobExecutionId;
 
 Expected results:
 
-- `transacao_pix.status` is `CONSOLIDATED`;
-- one `consolidado_pix` row exists with `tarifa = 1.00`;
+- `transacao_pix.status` is `CONSOLIDATED` for the seeded rows and
+  `E2E-SUCCESS-0001`;
+- one `consolidado_pix` row exists per processed `end_to_end_id` with
+  `tarifa = 1.00`;
 - `consolidado_pix.status` is `COMPLETED`;
-- the Job and its partition Step are `COMPLETED`;
+- the Job and its partition Steps are `COMPLETED`;
 - no Pix payload appears in Kafka messages or logs.
 
 Run the same partition or a retry and confirm that the unique `end_to_end_id`
